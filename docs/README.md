@@ -1,8 +1,8 @@
-# SAE-FRAG: Spatially-Aware Enhanced Feature Retrieval-Augmented Generation
+# RCM-FVR: Region-Aware Cross-Modal Alignment with Fact-Verified Retrieval-Augmented Radiology Report Generation
 
 ## Project Summary
 
-SAE-FRAG is a multi-stage deep learning system for **automatic radiology report generation** from chest X-ray images. It combines:
+RCM-FVR is a multi-stage deep learning system for **automatic radiology report generation** from chest X-ray images. It combines:
 
 - **SAENet** (Spatially-Aware Enhanced Network) — ResNet-101 + FPN + SAFE attention at **P3 resolution (28×28)**
 - **Cross-Modal Alignment** — region-level image-text alignment using Bio-ClinicalBERT
@@ -31,20 +31,21 @@ Each sample contains:
 ## Multi-Stage Training Pipeline
 
 ```
-Stage 1 → Stage 2 → mine_pairs → retriever → build_index → cache → Stage 3
- Align     Classify   RadGraph     InfoNCE      FAISS         49-tok   Generate
+Stage 1 → Stage 2 → mine_pairs → extract_entities → retriever → build_index → cache → Stage 3
+ Align     Classify   RadGraph           PKARG       InfoNCE      FAISS         49-tok   Generate
 ```
 
 | Stage | Script | Output |
 |-------|--------|--------|
-| 1. Visual-Language Alignment | `train_stage1.py` | `checkpoints/stage1/best.pth` |
-| 2a. Report Entity Classifier | `train_report_classifier.py` | `checkpoints/stage2/report_classifier.pth` |
-| 2b. Image Entity Classifier | `train_stage2.py` | `checkpoints/stage2/image_classifier.pth` |
-| 3a. Factual Pair Mining | `mine_factual_pairs.py` | `store/factual_pairs.pkl` |
-| 3b. Fact-Aware Retriever | `train_factual_retriever.py` | `checkpoints/stage1/factual_retriever.pth` |
-| 3c. FAISS Index | `build_index.py` | `store/faiss_index.bin` |
-| 3d. Feature Cache (49-token) | `cache_features.py` | `store/cache_train.pt` |
-| 3e. Report Generator | `train_stage3.py` | `checkpoints/stage3/best_generator.pth` |
+| 1. Visual-Language Alignment | `scripts/train/train_stage1.py` | `checkpoints/stage1/best.pth` |
+| 2a. Report Entity Classifier | `scripts/train/train_report_classifier.py` | `checkpoints/stage2/report_classifier.pth` |
+| 2b. Image Entity Classifier | `scripts/train/train_stage2.py` | `checkpoints/stage2/image_classifier.pth` |
+| 3a. Factual Pair Mining | `scripts/prepare/mine_factual_pairs.py --delta 0.3 --top_k 2` | `store/factual_pairs.pkl` |
+| 3b. Entity Extraction (PKARG) | `scripts/prepare/extract_entities.py --top_k 20` | `store/entity_tags.json` |
+| 3c. Fact-Aware Retriever | `scripts/train/train_factual_retriever.py` | `checkpoints/stage1/factual_retriever.pth` |
+| 3d. FAISS Index | `scripts/prepare/build_index.py` | `store/faiss_index.bin` |
+| 3e. Feature Cache (49-token) | `scripts/prepare/cache_features.py` | `store/cache_train.pt` |
+| 3f. Report Generator | `scripts/train/train_stage3.py` | `checkpoints/stage3/best_generator.pth` |
 
 ---
 
@@ -71,6 +72,7 @@ python scripts/train/train_stage1.py
 python scripts/train/train_report_classifier.py
 python scripts/train/train_stage2.py
 python scripts/prepare/mine_factual_pairs.py --delta 0.3 --top_k 2
+python scripts/prepare/extract_entities.py --top_k 20
 python scripts/train/train_factual_retriever.py
 python scripts/prepare/build_index.py
 python scripts/prepare/cache_features.py

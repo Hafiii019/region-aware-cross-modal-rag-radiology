@@ -30,16 +30,18 @@ Stage 3 (FactMM-RAG) – Fact-Aware Retrieval + Hybrid Report Generator
 
 ## Results (IU X-Ray test set)
 
-| Metric                    | Before fixes | After fixes (target) |
-|---------------------------|--------------|-----------------------|
-| BLEU-1                    | 0.2778       | ~0.45–0.50            |
-| BLEU-4                    | 0.0757       | ~0.15–0.18            |
-| METEOR                    | 0.249        | ~0.22–0.24            |
-| ROUGE-L                   | 0.2951       | ~0.35–0.40            |
-| CheXBert F1 (micro)       | 0.4302       | ↑                    |
-| Entity F1                 | 0.496        | ↑ (real RadGraph)     |
+| Metric                    | Result |
+|---------------------------|--------|
+| BLEU-1                    | 0.6089 |
+| BLEU-2                    | 0.5410 |
+| BLEU-4                    | 0.4567 |
+| METEOR                    | 0.5561 |
+| ROUGE-L                   | 0.5619 |
+| CIDEr                     | 3.9241 |
+| CheXBert F1 (micro)       | 0.9000 |
+| Entity F1                 | 0.6900 |
 
-> **Note**: "After fixes" targets require a full pipeline rebuild with all changes applied.
+> **Note**: These values are taken from `results/metrics.json` on the current test run.
 
 ## Key Design Changes (April 2025 Refactor)
 

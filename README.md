@@ -1,4 +1,4 @@
-# SAE-FRAG: Sparse Autoencoder Feature-Guided Radiology Report Generation
+# RCM-FVR: Region-Aware Cross-Modal Alignment with Fact-Verified Retrieval-Augmented Radiology Report Generation
 
 A multi-stage pipeline for automated chest X-ray report generation using multi-scale visual features, cross-modal alignment, RadGraph-based factual retrieval, and a medically pre-trained T5 decoder.
 
@@ -57,7 +57,7 @@ Stage 3 (FactMM-RAG) – Fact-Aware Retrieval + Hybrid Report Generator
 ## Project Structure
 
 ```
-sae-frag/
+rcm-fvr/
 ├── src/                        # Importable packages (add to PYTHONPATH)
 │   ├── models/                 # backbone, fpn, safe, alignment, projection
 │   ├── data/                   # IUXrayMultiViewDataset
@@ -68,7 +68,8 @@ sae-frag/
 ├── scripts/
 │   ├── prepare/
 │   │   ├── build_index.py      # Build FAISS index from Stage-1 embeddings
-│   │   └── cache_features.py   # Pre-compute frozen model outputs (run once)
+│   │   ├── cache_features.py   # Pre-compute frozen model outputs (run once)
+│   │   └── extract_entities.py # Extract PKARG entity tags for Stage 3
 │   ├── train/
 │   │   ├── train_stage1.py     # Train visual encoder + alignment
 │   │   ├── train_stage2.py     # Train image & report classifiers
@@ -175,20 +176,24 @@ Saves `report_classifier.pth` + `image_classifier.pth` to `checkpoints/stage2/`.
 #         Output: store/factual_pairs.pkl  (+ store/radgraph_cache.json)
 python scripts/prepare/mine_factual_pairs.py --delta 0.3 --top_k 2
 
-# Step 2: Train fact-aware multimodal retriever (InfoNCE, in-batch negatives)
+# Step 2: Extract PKARG entity tags for Stage 3
+#         Output: store/entity_tags.json
+python scripts/prepare/extract_entities.py --top_k 20
+
+# Step 3: Train fact-aware multimodal retriever (InfoNCE, in-batch negatives)
 #         Output: checkpoints/stage1/factual_retriever.pth
 python scripts/train/train_factual_retriever.py
 
-# Step 3: Build FAISS index using document encoder (image+text embeddings)
+# Step 4: Build FAISS index using document encoder (image+text embeddings)
 #         Output: store/faiss_index.bin + store/train_reports.pkl
 python scripts/prepare/build_index.py
 
-# Step 4: Pre-compute and cache frozen outputs (49-token pooled, ~0.7 GB)
+# Step 5: Pre-compute and cache frozen outputs (49-token pooled, ~0.7 GB)
 #         Must be re-run whenever Stage 1 or Stage 2 checkpoints change
 #         Output: store/cache_train.pt + store/cache_val.pt
 python scripts/prepare/cache_features.py
 
-# Step 5: Train hybrid report generator (two-phase, 40 epochs)
+# Step 6: Train hybrid report generator (two-phase, 40 epochs)
 #         Phase 1 (epochs 1–3): freeze T5, train projection layers only
 #         Phase 2 (epoch 4+):   full fine-tune of SciFive-base
 #         Output: checkpoints/stage3/best_generator.pth

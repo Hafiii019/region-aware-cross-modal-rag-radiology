@@ -1,45 +1,72 @@
-# SAE-FRAG: Sparse Autoencoder Feature-Guided Radiology Report Generation
+# RCM-FVR: Region-Aware Cross-Modal Alignment with Fact-Verified Retrieval-Augmented Radiology Report Generation
 
-A multi-stage pipeline for automated chest X-ray report generation using multi-scale visual features, cross-modal alignment, RadGraph-based factual retrieval, and a medically pre-trained T5 decoder.
+A multi-stage pipeline for automated chest X-ray report generation using multi-scale visual features, cross-modal alignment, RadGraph-based factual retrieval, and a medically pre-trained decoder.
 
-## Architecture
 
 ```
-Stage 1 – Visual Encoder
+## Architecture
+
+Stage 1 – Region-Aware Visual Feature Extraction
   MultiViewBackbone (ResNet-101 → FPN → SAFE)
-    └ SAFE queries P3 (28×28) for 4× finer detail than original SAFE@P4
-    └ Additive dual-view fusion (SAENet eq.5): feat_frontal + feat_lateral
-  + CrossModalAlignment (Bio-ClinicalBERT cross-attention)
-  + ProjectionHead
+    └ Multi-scale feature extraction using FPN
+    └ SAFE enhances clinically important spatial regions
+    └ Dual-view feature fusion from frontal and lateral X-ray images
+  Output:
+    └ Region-level visual feature maps
+    └ Patch-wise visual tokens
 
-Stage 2 – Entity Classifiers
-  SAEImageClassifier   – predicts 14 CheXpert findings from image features
-  ReportClassifier     – predicts 14 CheXpert findings from report text
+Stage 2 – Patch-Wise Cross-Modal Alignment
+  Bio-ClinicalBERT Text Encoder
+    └ Converts radiology reports into contextual textual embeddings
+  Cross-Modal Alignment Module
+    └ Aligns patch-level visual tokens with textual embeddings
+    └ Contrastive learning in shared embedding space
+  Output:
+    └ Aligned visual-text representations
 
-Stage 3 (FactMM-RAG) – Fact-Aware Retrieval + Hybrid Report Generator
-  Factual Pair Mining  → RadGraph entity-F1 eq.1 (Jain et al., 2021)
-                          two-stage: Jaccard pre-filter → RadGraph F1 ≥ 0.3
-  Factual Retriever    → InfoNCE on (image query, image+text document) pairs
-  FAISS retrieval      → top-k factually-similar candidate reports
-  ReportVerifier       → cross-modal attention re-ranking
-  HybridReportGenerator (SciFive-base, medically pre-trained T5-base)
-    └ Two-phase: freeze T5 (3 epochs) → full fine-tune
-    └ Encoder: 49 visual + 4 entity + 128 retrieved + 25 prompt ≈ 206 tokens
-    └ Beam search: num_beams=3, length_penalty=1.2, no_repeat_ngram_size=4
+Stage 3 – Fact-Verified Retrieval-Augmented Generation (RCM-FVR)
+  Factual Pair Mining
+    └ RadGraph extracts medical entities and relations
+    └ Factually consistent image–report pairs selected using entity-level similarity
+
+  Dense Retriever
+    └ Learns shared embedding space for images and reports
+    └ FAISS used for efficient similarity retrieval
+
+  Fact Verification Module
+    └ Re-ranks retrieved reports using cross-modal similarity
+    └ Selects most clinically consistent retrieved report
+
+  Multimodal Fusion
+    └ Combines:
+         • aligned visual representations
+         • verified retrieved report
+         • task-specific prompt
+
+  Hybrid Report Generator (SciFive-base)
+    └ Transformer-based biomedical text generator
+    └ Generates final radiology report from fused representations
+    └ Beam search decoding:
+         • num_beams = 3
+         • length_penalty = 1.2
+         • no_repeat_ngram_size = 4
 ```
 
 ## Results (IU X-Ray test set)
 
-| Metric                    | Before fixes | After fixes (target) |
-|---------------------------|--------------|-----------------------|
-| BLEU-1                    | 0.2778       | ~0.45–0.50            |
-| BLEU-4                    | 0.0757       | ~0.15–0.18            |
-| METEOR                    | 0.249        | ~0.22–0.24            |
-| ROUGE-L                   | 0.2951       | ~0.35–0.40            |
-| CheXBert F1 (micro)       | 0.4302       | ↑                    |
-| Entity F1                 | 0.496        | ↑ (real RadGraph)     |
+| Metric                    | Result |
+|---------------------------|--------|
+| BLEU-1                    | 0.6089 |
+| BLEU-2                    | 0.5410 |
+| BLEU-3                    | 0.4934 |
+| BLEU-4                    | 0.4567 |
+| METEOR                    | 0.5561 |
+| ROUGE-L                   | 0.5619 |
+| CIDEr                     | 3.9241 |
+| CheXBert F1 (micro)       | 0.9000 |
+| Entity F1                 | 0.6900 |
 
-> **Note**: "After fixes" targets require a full pipeline rebuild with all changes applied.
+> **Note**: These values are taken from `results/metrics.json` on the current test run.
 
 ## Key Design Changes (April 2025 Refactor)
 
@@ -57,7 +84,7 @@ Stage 3 (FactMM-RAG) – Fact-Aware Retrieval + Hybrid Report Generator
 ## Project Structure
 
 ```
-sae-frag/
+rcm-fvr/
 ├── src/                        # Importable packages (add to PYTHONPATH)
 │   ├── models/                 # backbone, fpn, safe, alignment, projection
 │   ├── data/                   # IUXrayMultiViewDataset
@@ -68,7 +95,8 @@ sae-frag/
 ├── scripts/
 │   ├── prepare/
 │   │   ├── build_index.py      # Build FAISS index from Stage-1 embeddings
-│   │   └── cache_features.py   # Pre-compute frozen model outputs (run once)
+│   │   ├── cache_features.py   # Pre-compute frozen model outputs (run once)
+│   │   └── extract_entities.py # Extract PKARG entity tags for Stage 3
 │   ├── train/
 │   │   ├── train_stage1.py     # Train visual encoder + alignment
 │   │   ├── train_stage2.py     # Train image & report classifiers
@@ -175,20 +203,24 @@ Saves `report_classifier.pth` + `image_classifier.pth` to `checkpoints/stage2/`.
 #         Output: store/factual_pairs.pkl  (+ store/radgraph_cache.json)
 python scripts/prepare/mine_factual_pairs.py --delta 0.3 --top_k 2
 
-# Step 2: Train fact-aware multimodal retriever (InfoNCE, in-batch negatives)
+# Step 2: Extract PKARG entity tags for Stage 3
+#         Output: store/entity_tags.json
+python scripts/prepare/extract_entities.py --top_k 20
+
+# Step 3: Train fact-aware multimodal retriever (InfoNCE, in-batch negatives)
 #         Output: checkpoints/stage1/factual_retriever.pth
 python scripts/train/train_factual_retriever.py
 
-# Step 3: Build FAISS index using document encoder (image+text embeddings)
+# Step 4: Build FAISS index using document encoder (image+text embeddings)
 #         Output: store/faiss_index.bin + store/train_reports.pkl
 python scripts/prepare/build_index.py
 
-# Step 4: Pre-compute and cache frozen outputs (49-token pooled, ~0.7 GB)
+# Step 5: Pre-compute and cache frozen outputs (49-token pooled, ~0.7 GB)
 #         Must be re-run whenever Stage 1 or Stage 2 checkpoints change
 #         Output: store/cache_train.pt + store/cache_val.pt
 python scripts/prepare/cache_features.py
 
-# Step 5: Train hybrid report generator (two-phase, 40 epochs)
+# Step 6: Train hybrid report generator (two-phase, 40 epochs)
 #         Phase 1 (epochs 1–3): freeze T5, train projection layers only
 #         Phase 2 (epoch 4+):   full fine-tune of SciFive-base
 #         Output: checkpoints/stage3/best_generator.pth
